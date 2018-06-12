@@ -19,7 +19,7 @@ type Room struct {
 	clientBuffSize       int
 	serverBuffSize       int
 	maxClientConnections int
-	channels             map[int]*RoomChannel
+	channels             map[int64]*model.Basket
 	channelsCount        int
 	serverConnection     *websocket.Conn
 	waitGroup            *sync.WaitGroup
@@ -36,7 +36,7 @@ func NewRoom(thisAddr, serverAddr string, clientBufSize, serverBufSize int, maxC
 		serverAddr:       serverAddr,
 		clientBuffSize:   clientBufSize,
 		serverBuffSize:   serverBufSize,
-		channels:         make(map[int]*RoomChannel, maxClientSize),
+		channels:         make(map[int]*model.Basket, maxClientSize),
 		serverConnection: nil,
 		waitGroup:        waitGroup,
 	}
@@ -51,7 +51,7 @@ func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
 		thisPort:             globalConfig.ConnectionsConfig.Client.ListenPort,
 		serverAddr:           globalConfig.ConnectionsConfig.Server.Url,
 		clientBuffSize:       globalConfig.ConnectionsConfig.Client.MaxBuffSize,
-		channels:             make(map[int]*RoomChannel, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
+		channels:             make(map[int]*model.Basket, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
 		serverConnection:     nil,
 		waitGroup:            waitGroup,
 		eventsList:           list.New(),
@@ -160,11 +160,50 @@ func (room *Room) serveClientConnection(ws *websocket.Conn) {
 		}
 	}
 
-	log.Println("Client connection " + addr + " closed")
+	inputClosed := make(chan bool)
+	outputClosed := make(chan bool)
 
-	room.channels[channelId] = nil
-	room.channelsCount--
+	go room.serveInput(ws, &inputClosed)
+	go room.serveOutput(ws, &outputClosed)
 
+	for <-inputClosed && <-outputClosed {
+
+		log.Println("Client connection " + addr + " closed")
+
+		room.channels[channelId] = nil
+		room.channelsCount--
+		return
+	}
+}
+
+func (room *Room) serveInput(ws *websocket.Conn, inputClosed *chan bool) {
+
+	payload := make([]byte, room.config.ConnectionsConfig.Client.MaxBuffSize)
+
+	var eventMessage model.EventMessage
+
+	for {
+		read, err := ws.Read(payload)
+		if err == nil {
+			err = json.Unmarshal(payload[0:read], &eventMessage)
+
+			if err != nil {
+
+				basket := room.channels[eventMessage.EventId]
+				for _,v := range basket.MessageChannels{
+					v <- eventMessage
+				}
+
+			}
+		}
+	}
+
+	*inputClosed <- true
+}
+
+func (room *Room) serveOutput(ws *websocket.Conn, outputClosed *chan bool) {
+
+	*outputClosed <- true
 }
 
 func (room *Room) addEvent(event *model.Event) {
