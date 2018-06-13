@@ -24,15 +24,9 @@ func configureServerConnections(group *sync.WaitGroup) {
 
 	defer group.Done()
 	connectionsRoom := room.NewRoomFromConfig(group)
-	repairCode := make(chan bool)
 	group.Add(1)
-	go connectionsRoom.InitServerConnection(&repairCode)
+	go connectionsRoom.InitServerConnection()
 	group.Add(1)
 	go connectionsRoom.InitClientConnections()
-
-	for <-repairCode {
-		group.Add(1)
-		go connectionsRoom.InitServerConnection(&repairCode)
-	}
 
 }

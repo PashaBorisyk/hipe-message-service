@@ -60,6 +60,7 @@ type Server struct {
 	MaxConnectionPoolSize int    `json:"max_connection_pool_size"`
 	MinConnectionPoolSize int    `json:"min_connection_pool_size"`
 	AutoConfigPoolSize    bool   `json:"auto_config_pool_size"`
+	Types                 []Type `json:"types"`
 }
 
 type Client struct {
@@ -73,6 +74,12 @@ type Client struct {
 
 type Room struct {
 	EventsMaxSize int `json:"events_max_size"`
+	Category      int `json:"category"`
+}
+
+type Type struct {
+	Category int `json:"category"`
+	Type     int `json:"type"`
 }
 
 func GetConfig() GlobalConfig {

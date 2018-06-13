@@ -1,6 +1,7 @@
 package model
 
 type MessageChannel chan EventMessage
+type EventBasket map[int64]*MessageChannel
 
 type EventMessage struct {
 	Time     int64  `json:"time"`
@@ -11,7 +12,6 @@ type EventMessage struct {
 }
 
 type Message struct {
-
 	Id          int64  `json:"id"`
 	SenderId    int64  `json:"senderId"`
 	EventID     int    `json:"eventId"`
@@ -19,9 +19,5 @@ type Message struct {
 	Message     string `json:"message"`
 	Informative bool   `json:"informative"`
 	Execute     int    `json:"execute"`
-
 }
 
-type Basket struct {
-	MessageChannels map[int64]MessageChannel
-}

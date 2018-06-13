@@ -2,31 +2,35 @@ package room
 
 import (
 	"config"
-	"container/list"
 	"encoding/json"
 	"golang.org/x/net/websocket"
 	"log"
 	"model"
 	"net/http"
 	"sync"
+	"strconv"
+	"io/ioutil"
 )
 
-type RoomChannel chan *model.Event
+const GetEventsPath = "/event/get_by_member_id/"
+const UserId = "user_id"
 
 type Room struct {
+	serverError          error
 	thisPort             string
 	serverAddr           string
 	clientBuffSize       int
 	serverBuffSize       int
 	maxClientConnections int
-	channels             map[int64]*model.Basket
 	channelsCount        int
-	serverConnection     *websocket.Conn
-	waitGroup            *sync.WaitGroup
-	serverError          error
-	eventsList           *list.List
 	eventsMaxSize        int
-	config               *config.GlobalConfig
+	type_                int
+	category             int
+	eventChannels        map[int64]*model.EventBasket
+	userChannels         map[int64]*model.MessageChannel
+	waitGroup            *sync.WaitGroup
+	serverConnection     map[config.Type]*websocket.Conn
+	config               config.GlobalConfig
 }
 
 func NewRoom(thisAddr, serverAddr string, clientBufSize, serverBufSize int, maxClientSize int, waitGroup *sync.WaitGroup) *Room {
@@ -36,7 +40,8 @@ func NewRoom(thisAddr, serverAddr string, clientBufSize, serverBufSize int, maxC
 		serverAddr:       serverAddr,
 		clientBuffSize:   clientBufSize,
 		serverBuffSize:   serverBufSize,
-		channels:         make(map[int]*model.Basket, maxClientSize),
+		eventChannels:    make(map[int64]*model.EventBasket, maxClientSize),
+		userChannels:     make(map[int64]*model.MessageChannel, maxClientSize),
 		serverConnection: nil,
 		waitGroup:        waitGroup,
 	}
@@ -51,13 +56,14 @@ func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
 		thisPort:             globalConfig.ConnectionsConfig.Client.ListenPort,
 		serverAddr:           globalConfig.ConnectionsConfig.Server.Url,
 		clientBuffSize:       globalConfig.ConnectionsConfig.Client.MaxBuffSize,
-		channels:             make(map[int]*model.Basket, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
-		serverConnection:     nil,
+		eventChannels:        make(map[int64]*model.EventBasket, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
+		userChannels:         make(map[int64]*model.MessageChannel, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
+		serverConnection:     make(map[config.Type]*websocket.Conn),
 		waitGroup:            waitGroup,
-		eventsList:           list.New(),
 		eventsMaxSize:        globalConfig.ConnectionsConfig.Room.EventsMaxSize,
 		maxClientConnections: globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize,
-		config:               &globalConfig,
+		config:               globalConfig,
+		category:             globalConfig.ConnectionsConfig.Room.Category,
 	}
 
 }
@@ -73,145 +79,145 @@ func (room *Room) InitClientConnections() {
 	}
 }
 
-func (room *Room) InitServerConnection(repairCode *chan bool) {
+func (room *Room) InitServerConnection() {
 	log.Println("Creating server connection...")
 
 	defer room.waitGroup.Done()
 
-	conn, err := websocket.Dial(room.serverAddr, "ws", room.serverAddr)
-	if err != nil {
-		log.Println("Unable to connect to server with addres " + room.serverAddr + " protocol : ws")
-		log.Println(err)
-		return
+	for _, connectionType := range room.config.ConnectionsConfig.Server.Types {
+
+		query := room.serverAddr + "?type=" + strconv.Itoa(connectionType.Type) + "&category=" + strconv.Itoa(connectionType.Category)
+
+		conn, err := websocket.Dial(room.serverAddr, "ws", query)
+		if err != nil {
+			log.Println("Unable to connect to server with addres " + room.serverAddr + " protocol : ws")
+			log.Println(err)
+			return
+		}
+		room.serverConnection[connectionType] = conn
+		room.waitGroup.Add(1)
+		go room.serveServerConnection(&connectionType, conn)
 	}
-	room.serverConnection = conn
-	room.waitGroup.Add(1)
-	go room.serveServerConnection(repairCode)
+
 	log.Println("Server connection" + room.serverAddr + " created successfully")
 
 }
 
-func (room *Room) serveServerConnection(repairCode *chan bool) {
+func (room *Room) serveServerConnection(connectionType *config.Type, connection *websocket.Conn) {
 	defer room.waitGroup.Done()
 
-	addr := room.serverConnection.RemoteAddr().String()
+	addr := connection.RemoteAddr().String()
 
-	room.serverConnection.MaxPayloadBytes = room.serverBuffSize
+	connection.MaxPayloadBytes = room.serverBuffSize
 	for {
 		msg := make([]byte, room.clientBuffSize)
-		read, err := room.serverConnection.Read(msg)
+		read, err := connection.Read(msg)
 		if err != nil {
 			log.Println("Closing server connection with addres " + addr)
 			log.Println(err)
-			room.serverConnection.Close()
-			*repairCode <- true
+			connection.Close()
 			return
 		}
 
-		event := new(model.Event)
+		event := new(model.EventMessage)
 		json.Unmarshal(msg[0:read], &event)
-		room.addEvent(event)
-
-		for _, v := range room.channels {
-			*v <- event
-		}
 
 	}
 
 	log.Println("Server connection " + addr + " closed")
 	log.Println("Repairing connection")
 
-	*repairCode <- true
-
 }
 
 func (room *Room) serveClientConnection(ws *websocket.Conn) {
 	room.waitGroup.Add(1)
 	defer room.waitGroup.Done()
+	ws.MaxPayloadBytes = room.clientBuffSize
 
 	if room.channelsCount >= room.maxClientConnections {
 		log.Println("Cannot create connection due the stack is full")
 		return
 	}
-
 	room.channelsCount++
-	channelId := room.channelsCount
-
 	addr := ws.RemoteAddr().String()
 	log.Print("Client connection " + addr + " created")
 
-	ws.MaxPayloadBytes = room.clientBuffSize
+	userId := ws.Request().Header.Get(UserId)
 
-	for e := room.eventsList.Front(); e != nil; e = e.Next() {
-		raw, err := json.Marshal(e)
-		if err == nil {
-			ws.Write(raw)
-		}
+	getEventsUrl := room.config.ConnectionsConfig.Server.Url + GetEventsPath + userId
+
+	resp, err := http.Get(getEventsUrl)
+	if err != nil {
+		log.Println("Unable to get users event ids; URL : " + getEventsUrl)
 	}
 
-	thisChannel := make(RoomChannel)
-	room.channels[channelId] = &thisChannel
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		log.Println("Unable to read event ids array; URL : " + getEventsUrl)
+	}
+	var eventIds []int64
 
-	for {
-		event := <-thisChannel
-		raw, err := json.Marshal(event)
-		if err == nil {
-			ws.Write(raw)
-		}
+	err = json.Unmarshal(body, &eventIds)
+
+	if err != nil {
+		log.Println("Unable to parse json : " + string(body))
 	}
 
-	inputClosed := make(chan bool)
-	outputClosed := make(chan bool)
+	thisChannel := make(model.MessageChannel)
 
-	go room.serveInput(ws, &inputClosed)
-	go room.serveOutput(ws, &outputClosed)
+	inputStarted := make(chan bool)
+	outputStarted := make(chan bool)
 
-	for <-inputClosed && <-outputClosed {
-
-		log.Println("Client connection " + addr + " closed")
-
-		room.channels[channelId] = nil
-		room.channelsCount--
-		return
+	userID, err := strconv.ParseInt(userId, 10, 64)
+	if err != nil {
+		log.Println("User id is not an int : " + userId)
 	}
+
+	go room.serveInput(ws, userID, &inputStarted)
+	go room.serveOutput(ws,&thisChannel,&outputStarted)
+
+	<-inputStarted
+	<-outputStarted
+
 }
 
-func (room *Room) serveInput(ws *websocket.Conn, inputClosed *chan bool) {
+func (room *Room) serveInput(ws *websocket.Conn, userId int64, inputClosed *chan bool) {
+	*inputClosed <- true
 
 	payload := make([]byte, room.config.ConnectionsConfig.Client.MaxBuffSize)
-
 	var eventMessage model.EventMessage
 
 	for {
 		read, err := ws.Read(payload)
 		if err == nil {
 			err = json.Unmarshal(payload[0:read], &eventMessage)
-
 			if err != nil {
-
-				basket := room.channels[eventMessage.EventId]
-				for _,v := range basket.MessageChannels{
-					v <- eventMessage
+				basket := room.eventChannels[eventMessage.EventId]
+				for k, v := range *basket {
+					if userId != k {
+						*v <- eventMessage
+					}
 				}
 
 			}
 		}
 	}
 
-	*inputClosed <- true
 }
 
-func (room *Room) serveOutput(ws *websocket.Conn, outputClosed *chan bool) {
-
+func (room *Room) serveOutput(ws *websocket.Conn,chanel *model.MessageChannel , outputClosed *chan bool) {
 	*outputClosed <- true
-}
 
-func (room *Room) addEvent(event *model.Event) {
-
-	if room.eventsList.Len() >= room.eventsMaxSize {
-		room.eventsList.Remove(room.eventsList.Front())
+	for {
+		message := <- *chanel
+		payload, err := json.Marshal(message)
+		if err == nil {
+		 	_,err := ws.Write(payload)
+			if err != nil {
+				log.Println("Error while writing message to client")
+			}
+		}
 	}
-
-	room.eventsList.PushBack(event)
 
 }
