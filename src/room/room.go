@@ -16,6 +16,7 @@ const GetEventsPath = "/event/get_by_member_id/"
 const UserId = "user_id"
 
 type Room struct {
+	clientCounter        int
 	serverError          error
 	thisPort             string
 	serverAddr           string
@@ -54,7 +55,7 @@ func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
 
 	return &Room{
 		thisPort:             globalConfig.ConnectionsConfig.Client.ListenPort,
-		serverAddr:           globalConfig.ConnectionsConfig.Server.Url,
+		serverAddr:           globalConfig.ConnectionsConfig.Server.WsUrl,
 		clientBuffSize:       globalConfig.ConnectionsConfig.Client.MaxBuffSize,
 		eventChannels:        make(map[int64]*model.EventBasket, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
 		userChannels:         make(map[int64]*model.MessageChannel, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
@@ -84,26 +85,39 @@ func (room *Room) InitServerConnection() {
 
 	defer room.waitGroup.Done()
 
+	repairer := make(chan *config.Type)
 	for _, connectionType := range room.config.ConnectionsConfig.Server.Types {
-
-		query := room.serverAddr + "?type=" + strconv.Itoa(connectionType.Type) + "&category=" + strconv.Itoa(connectionType.Category)
-
-		conn, err := websocket.Dial(room.serverAddr, "ws", query)
-		if err != nil {
-			log.Println("Unable to connect to server with addres " + room.serverAddr + " protocol : ws")
-			log.Println(err)
-			return
-		}
-		room.serverConnection[connectionType] = conn
-		room.waitGroup.Add(1)
-		go room.serveServerConnection(&connectionType, conn)
+		room.createServerConnection(connectionType, &repairer)
 	}
 
-	log.Println("Server connection" + room.serverAddr + " created successfully")
+	for {
+		connType := <-repairer
+		if connType.Type == -1 || connType.Category == -1 {
+			break
+		}
+		room.createServerConnection(*connType, &repairer)
+	}
 
 }
 
-func (room *Room) serveServerConnection(connectionType *config.Type, connection *websocket.Conn) {
+func (room *Room) createServerConnection(connectionType config.Type, repairer *chan *config.Type) {
+
+	addr := room.serverAddr + "?for_type=" + strconv.Itoa(connectionType.Type) + "&for_category=" + strconv.Itoa(connectionType.Category)
+	origin := "http://*"
+	conn, err := websocket.Dial(addr, "ws", origin)
+	if err != nil {
+		log.Println("Unable to connect to server with addres " + room.serverAddr + " protocol : ws")
+		log.Println(err)
+		return
+	}
+	room.serverConnection[connectionType] = conn
+	room.waitGroup.Add(1)
+	go room.serveServerConnection(connectionType, conn, repairer)
+	log.Println("Server connection " + addr + " created successfully")
+
+}
+
+func (room *Room) serveServerConnection(connectionType config.Type, connection *websocket.Conn, repairer *chan *config.Type) {
 	defer room.waitGroup.Done()
 
 	addr := connection.RemoteAddr().String()
@@ -116,7 +130,7 @@ func (room *Room) serveServerConnection(connectionType *config.Type, connection 
 			log.Println("Closing server connection with addres " + addr)
 			log.Println(err)
 			connection.Close()
-			return
+			break
 		}
 
 		event := new(model.EventMessage)
@@ -126,10 +140,12 @@ func (room *Room) serveServerConnection(connectionType *config.Type, connection 
 
 	log.Println("Server connection " + addr + " closed")
 	log.Println("Repairing connection")
+	*repairer <- &connectionType
 
 }
 
 func (room *Room) serveClientConnection(ws *websocket.Conn) {
+	log.Println("Creating client connection : " + ws.RemoteAddr().String())
 	room.waitGroup.Add(1)
 	defer room.waitGroup.Done()
 	ws.MaxPayloadBytes = room.clientBuffSize
@@ -142,9 +158,9 @@ func (room *Room) serveClientConnection(ws *websocket.Conn) {
 	addr := ws.RemoteAddr().String()
 	log.Print("Client connection " + addr + " created")
 
-	userId := ws.Request().Header.Get(UserId)
+	userId := ws.Request().URL.Query().Get(UserId)
 
-	getEventsUrl := room.config.ConnectionsConfig.Server.Url + GetEventsPath + userId
+	getEventsUrl := room.config.ConnectionsConfig.Server.HttpUrl + GetEventsPath + userId
 
 	resp, err := http.Get(getEventsUrl)
 	if err != nil {
@@ -161,12 +177,12 @@ func (room *Room) serveClientConnection(ws *websocket.Conn) {
 	err = json.Unmarshal(body, &eventIds)
 
 	if err != nil {
-		log.Println("Unable to parse json : " + string(body))
+		log.Println("Unable to parse event json : " + string(body))
+		eventIds = []int64{1, 2, 3, 4, 5}
 	}
 
 	thisChannel := make(model.MessageChannel)
 
-	inputStarted := make(chan bool)
 	outputStarted := make(chan bool)
 
 	userID, err := strconv.ParseInt(userId, 10, 64)
@@ -174,49 +190,61 @@ func (room *Room) serveClientConnection(ws *websocket.Conn) {
 		log.Println("User id is not an int : " + userId)
 	}
 
-	go room.serveInput(ws, userID, &inputStarted)
-	go room.serveOutput(ws,&thisChannel,&outputStarted)
-
-	<-inputStarted
+	room.clientCounter++
+	log.Println("Client connection " + ws.RemoteAddr().String() + " successfully instatieted; Users online : "+ strconv.Itoa(room.clientCounter))
+	go room.serveOutput(ws, &thisChannel, &outputStarted)
 	<-outputStarted
+	room.serveInput(ws, userID)
+
+	room.clientCounter--
+	log.Println("Closing client connection " + ws.RemoteAddr().String()+ " ; Users online : "+ strconv.Itoa(room.clientCounter))
 
 }
 
-func (room *Room) serveInput(ws *websocket.Conn, userId int64, inputClosed *chan bool) {
-	*inputClosed <- true
+func (room *Room) serveInput(ws *websocket.Conn, userId int64) {
 
 	payload := make([]byte, room.config.ConnectionsConfig.Client.MaxBuffSize)
 	var eventMessage model.EventMessage
 
 	for {
 		read, err := ws.Read(payload)
+		log.Println("Incomming message ")
 		if err == nil {
 			err = json.Unmarshal(payload[0:read], &eventMessage)
-			if err != nil {
+			if err == nil {
 				basket := room.eventChannels[eventMessage.EventId]
 				for k, v := range *basket {
 					if userId != k {
 						*v <- eventMessage
 					}
 				}
-
+			} else {
+				log.Println("Error while parsing Message json : "+ string(payload[0:read]))
+				log.Println(err)
+				break
 			}
+		} else {
+			log.Println("Error while reading from buffer")
+			log.Println(err)
+			break
 		}
 	}
-
 }
 
-func (room *Room) serveOutput(ws *websocket.Conn,chanel *model.MessageChannel , outputClosed *chan bool) {
-	*outputClosed <- true
+func (room *Room) serveOutput(ws *websocket.Conn, chanel *model.MessageChannel, outputStarted *chan bool) {
+	*outputStarted <- true
 
 	for {
-		message := <- *chanel
+		message := <-*chanel
 		payload, err := json.Marshal(message)
 		if err == nil {
-		 	_,err := ws.Write(payload)
+			_, err := ws.Write(payload)
 			if err != nil {
 				log.Println("Error while writing message to client")
+				break
 			}
+		} else{
+			break
 		}
 	}
 

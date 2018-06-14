@@ -55,7 +55,8 @@ type ConnectionsConfig struct {
 }
 
 type Server struct {
-	Url                   string `json:"url"`
+	WsUrl                 string `json:"ws_url"`
+	HttpUrl               string 	`json:"http_url"`
 	ConnectionPullSize    int    `json:"connection_pull_size"`
 	MaxConnectionPoolSize int    `json:"max_connection_pool_size"`
 	MinConnectionPoolSize int    `json:"min_connection_pool_size"`
