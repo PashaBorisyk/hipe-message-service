@@ -191,13 +191,13 @@ func (room *Room) serveClientConnection(ws *websocket.Conn) {
 	}
 
 	room.clientCounter++
-	log.Println("Client connection " + ws.RemoteAddr().String() + " successfully instatieted; Users online : "+ strconv.Itoa(room.clientCounter))
+	log.Println("Client connection " + ws.RemoteAddr().String() + " successfully instatieted; Users online : " + strconv.Itoa(room.clientCounter))
 	go room.serveOutput(ws, &thisChannel, &outputStarted)
 	<-outputStarted
 	room.serveInput(ws, userID)
 
 	room.clientCounter--
-	log.Println("Closing client connection " + ws.RemoteAddr().String()+ " ; Users online : "+ strconv.Itoa(room.clientCounter))
+	log.Println("Closing client connection " + ws.RemoteAddr().String() + " ; Users online : " + strconv.Itoa(room.clientCounter))
 
 }
 
@@ -219,7 +219,7 @@ func (room *Room) serveInput(ws *websocket.Conn, userId int64) {
 					}
 				}
 			} else {
-				log.Println("Error while parsing Message json : "+ string(payload[0:read]))
+				log.Println("Error while parsing Message json : " + string(payload[0:read]))
 				log.Println(err)
 				break
 			}
@@ -243,7 +243,7 @@ func (room *Room) serveOutput(ws *websocket.Conn, chanel *model.MessageChannel, 
 				log.Println("Error while writing message to client")
 				break
 			}
-		} else{
+		} else {
 			break
 		}
 	}
