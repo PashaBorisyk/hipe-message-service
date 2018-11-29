@@ -52,11 +52,12 @@ type ConnectionsConfig struct {
 	Server Server `json:"Server"`
 	Client Client `json:"Client"`
 	Room   Room   `json:"Room"`
+	Mongo  Mongo  `json:"Mongo"`
 }
 
 type Server struct {
 	WsUrl                 string `json:"ws_url"`
-	HttpUrl               string 	`json:"http_url"`
+	HttpUrl               string `json:"http_url"`
 	ConnectionPullSize    int    `json:"connection_pull_size"`
 	MaxConnectionPoolSize int    `json:"max_connection_pool_size"`
 	MinConnectionPoolSize int    `json:"min_connection_pool_size"`
@@ -81,6 +82,12 @@ type Room struct {
 type Type struct {
 	Category int `json:"category"`
 	Type     int `json:"type"`
+}
+
+type Mongo struct {
+	Uri        string `json:"uri"`
+	Database   string `json:"database"`
+	Collection string `json:"collection"`
 }
 
 func GetConfig() GlobalConfig {

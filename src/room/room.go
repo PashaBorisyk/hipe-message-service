@@ -4,12 +4,12 @@ import (
 	"config"
 	"encoding/json"
 	"golang.org/x/net/websocket"
+	"io/ioutil"
 	"log"
 	"model"
 	"net/http"
-	"sync"
 	"strconv"
-	"io/ioutil"
+	"sync"
 )
 
 const GetEventsPath = "/event/get_by_member_id/"

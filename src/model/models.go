@@ -20,4 +20,3 @@ type Message struct {
 	Informative bool   `json:"informative"`
 	Execute     int    `json:"execute"`
 }
-
