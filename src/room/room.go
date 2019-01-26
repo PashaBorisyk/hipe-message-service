@@ -3,6 +3,9 @@ package room
 import (
 	"config"
 	"encoding/json"
+	"fmt"
+	"github.com/Shopify/sarama"
+	"github.com/wvanbergen/kafka/consumergroup"
 	"golang.org/x/net/websocket"
 	"io/ioutil"
 	"log"
@@ -10,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 )
 
 const GetEventsPath = "/event/get_by_member_id/"
@@ -19,7 +23,7 @@ type Room struct {
 	clientCounter        int
 	serverError          error
 	thisPort             string
-	serverAddr           string
+	kafkaAddress         []string
 	clientBuffSize       int
 	serverBuffSize       int
 	maxClientConnections int
@@ -30,24 +34,24 @@ type Room struct {
 	eventChannels        map[int64]*model.EventBasket
 	userChannels         map[int64]*model.MessageChannel
 	waitGroup            *sync.WaitGroup
-	serverConnection     map[config.Type]*websocket.Conn
+	serverConnection     map[config.Topics]*websocket.Conn
 	config               config.GlobalConfig
 }
 
-func NewRoom(thisAddr, serverAddr string, clientBufSize, serverBufSize int, maxClientSize int, waitGroup *sync.WaitGroup) *Room {
-
-	return &Room{
-		thisPort:         thisAddr,
-		serverAddr:       serverAddr,
-		clientBuffSize:   clientBufSize,
-		serverBuffSize:   serverBufSize,
-		eventChannels:    make(map[int64]*model.EventBasket, maxClientSize),
-		userChannels:     make(map[int64]*model.MessageChannel, maxClientSize),
-		serverConnection: nil,
-		waitGroup:        waitGroup,
-	}
-
-}
+//func NewRoom(thisAddr, kafkaAddress string, clientBufSize, serverBufSize int, maxClientSize int, waitGroup *sync.WaitGroup) *Room {
+//
+//	return &Room{
+//		thisPort:         thisAddr,
+//		kafkaAddress:     kafkaAddress,
+//		clientBuffSize:   clientBufSize,
+//		serverBuffSize:   serverBufSize,
+//		eventChannels:    make(map[int64]*model.EventBasket, maxClientSize),
+//		userChannels:     make(map[int64]*model.MessageChannel, maxClientSize),
+//		serverConnection: nil,
+//		waitGroup:        waitGroup,
+//	}
+//
+//}
 
 func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
 
@@ -55,11 +59,11 @@ func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
 
 	return &Room{
 		thisPort:             globalConfig.ConnectionsConfig.Client.ListenPort,
-		serverAddr:           globalConfig.ConnectionsConfig.Server.WsUrl,
+		kafkaAddress:         globalConfig.ConnectionsConfig.KafkaServer.ServerUrls,
 		clientBuffSize:       globalConfig.ConnectionsConfig.Client.MaxBuffSize,
 		eventChannels:        make(map[int64]*model.EventBasket, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
 		userChannels:         make(map[int64]*model.MessageChannel, globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize),
-		serverConnection:     make(map[config.Type]*websocket.Conn),
+		serverConnection:     make(map[config.Topics]*websocket.Conn),
 		waitGroup:            waitGroup,
 		eventsMaxSize:        globalConfig.ConnectionsConfig.Room.EventsMaxSize,
 		maxClientConnections: globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize,
@@ -80,67 +84,40 @@ func (room *Room) InitClientConnections() {
 	}
 }
 
-func (room *Room) InitServerConnection() {
+func (room *Room) InitKafkaConnection() {
 	log.Println("Creating server connection...")
 
 	defer room.waitGroup.Done()
 
-	repairer := make(chan *config.Type)
-	for _, connectionType := range room.config.ConnectionsConfig.Server.Types {
-		room.createServerConnection(connectionType, &repairer)
-	}
+	kafkaConfiguration := consumergroup.NewConfig()
+	kafkaConfiguration.Offsets.Initial = sarama.OffsetOldest
+	kafkaConfiguration.Offsets.ProcessingTimeout = 10 * time.Second
 
-	for {
-		connType := <-repairer
-		if connType.Type == -1 || connType.Category == -1 {
-			break
-		}
-		room.createServerConnection(*connType, &repairer)
-	}
+	cgroup := room.config.ConnectionsConfig.KafkaServer.CGroup
+	topics := room.config.ConnectionsConfig.KafkaServer.Topics
+	zookeeper := room.config.ConnectionsConfig.KafkaServer.ServerUrls
 
-}
-
-func (room *Room) createServerConnection(connectionType config.Type, repairer *chan *config.Type) {
-
-	addr := room.serverAddr + "?for_type=" + strconv.Itoa(connectionType.Type) + "&for_category=" + strconv.Itoa(connectionType.Category)
-	origin := "http://*"
-	conn, err := websocket.Dial(addr, "ws", origin)
+	cg, err := consumergroup.JoinConsumerGroup(cgroup, topics, zookeeper, kafkaConfiguration)
+	defer cg.Close()
 	if err != nil {
-		log.Println("Unable to connect to server with addres " + room.serverAddr + " protocol : ws")
-		log.Println(err)
-		return
+		log.Fatal("Error while connecting zookeeper ", err.Error())
 	}
-	room.serverConnection[connectionType] = conn
-	room.waitGroup.Add(1)
-	go room.serveServerConnection(connectionType, conn, repairer)
-	log.Println("Server connection " + addr + " created successfully")
-
+	consume(cg)
 }
 
-func (room *Room) serveServerConnection(connectionType config.Type, connection *websocket.Conn, repairer *chan *config.Type) {
-	defer room.waitGroup.Done()
+func consume(cg *consumergroup.ConsumerGroup) {
 
-	addr := connection.RemoteAddr().String()
-
-	connection.MaxPayloadBytes = room.serverBuffSize
 	for {
-		msg := make([]byte, room.clientBuffSize)
-		read, err := connection.Read(msg)
-		if err != nil {
-			log.Println("Closing server connection with addres " + addr)
-			log.Println(err)
-			connection.Close()
-			break
+		select {
+		case msg := <-cg.Messages():
+			log.Println("Message got : ", string(msg.Value))
+			err := cg.CommitUpto(msg)
+			if err != nil {
+				fmt.Println("Error commit zookeeper: ", err.Error())
+			}
+
 		}
-
-		event := new(model.EventMessage)
-		json.Unmarshal(msg[0:read], &event)
-
 	}
-
-	log.Println("Server connection " + addr + " closed")
-	log.Println("Repairing connection")
-	*repairer <- &connectionType
 
 }
 
@@ -160,7 +137,7 @@ func (room *Room) serveClientConnection(ws *websocket.Conn) {
 
 	userId := ws.Request().URL.Query().Get(UserId)
 
-	getEventsUrl := room.config.ConnectionsConfig.Server.HttpUrl + GetEventsPath + userId
+	getEventsUrl := room.config.ConnectionsConfig.EventProcessor.Url + GetEventsPath + userId
 
 	resp, err := http.Get(getEventsUrl)
 	if err != nil {

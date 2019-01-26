@@ -12,25 +12,25 @@ func init() {
 
 	log.Println("Creating configuration...")
 
-	log.Println("Reading config.properties file...")
-	fileRaw, err := ioutil.ReadFile("./resources/config.properties")
+	log.Println("Reading config.json file...")
+	fileRaw, err := ioutil.ReadFile("./resources/config.json")
 
 	if err != nil {
-		log.Println("Can not read from config.properties file")
+		log.Println("Can not read from config.json file")
 		log.Print(err)
 	} else {
 		log.Println("Reading successful")
 	}
 
-	log.Println("Validating config.properties file...")
+	log.Println("Validating config.json file...")
 	isValid := json.Valid(fileRaw)
 	if !isValid {
-		log.Print("Invalid config.properties file format. JSON structure expected expected")
+		log.Print("Invalid config.json file format. JSON structure expected expected")
 	} else {
 		log.Println("Validating successful")
 	}
 
-	log.Println("Decoding config.properties file...")
+	log.Println("Decoding config.json file...")
 	var config GlobalConfig
 	err = json.Unmarshal(fileRaw, &config)
 	if err != nil {
@@ -49,20 +49,25 @@ type GlobalConfig struct {
 }
 
 type ConnectionsConfig struct {
-	Server Server `json:"Server"`
-	Client Client `json:"Client"`
-	Room   Room   `json:"Room"`
-	Mongo  Mongo  `json:"Mongo"`
+	KafkaServer    KafkaConsumer  `json:"KafkaConsumer"`
+	Client         Client         `json:"Client"`
+	Room           Room           `json:"Room"`
+	Mongo          Mongo          `json:"Mongo"`
+	EventProcessor EventProcessor `json:"EventProcessor"`
 }
 
-type Server struct {
-	WsUrl                 string `json:"ws_url"`
-	HttpUrl               string `json:"http_url"`
-	ConnectionPullSize    int    `json:"connection_pull_size"`
-	MaxConnectionPoolSize int    `json:"max_connection_pool_size"`
-	MinConnectionPoolSize int    `json:"min_connection_pool_size"`
-	AutoConfigPoolSize    bool   `json:"auto_config_pool_size"`
-	Types                 []Type `json:"types"`
+type KafkaConsumer struct {
+	ServerUrls            []string `json:"server_urls"`
+	CGroup                string   `json:"c_group"`
+	ConnectionPullSize    int      `json:"connection_pull_size"`
+	MaxConnectionPoolSize int      `json:"max_connection_pool_size"`
+	MinConnectionPoolSize int      `json:"min_connection_pool_size"`
+	AutoConfigPoolSize    bool     `json:"auto_config_pool_size"`
+	Topics                []string `json:"topics"`
+}
+
+type EventProcessor struct {
+	Url string `json:"url"`
 }
 
 type Client struct {
@@ -79,9 +84,8 @@ type Room struct {
 	Category      int `json:"category"`
 }
 
-type Type struct {
-	Category int `json:"category"`
-	Type     int `json:"type"`
+type Topics struct {
+	TopicName string `json:"name"`
 }
 
 type Mongo struct {
