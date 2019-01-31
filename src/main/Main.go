@@ -27,6 +27,6 @@ func configureServerConnections(group *sync.WaitGroup) {
 	group.Add(1)
 	go connectionsRoom.InitKafkaConnection()
 	group.Add(1)
-	go connectionsRoom.InitClientConnections()
+	go connectionsRoom.InitClientConnectionsHandler()
 
 }

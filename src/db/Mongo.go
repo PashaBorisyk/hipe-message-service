@@ -29,12 +29,12 @@ func init() {
 
 	for _, name := range databaseNames {
 		if name == mongoConfig.Database {
-			hasName =true
+			hasName = true
 			break
 		}
 	}
 
-	if !hasName{
+	if !hasName {
 		log.Print("No such database found : " + mongoConfig.Database)
 		return
 	}
@@ -57,12 +57,11 @@ func init() {
 		}
 	}
 
-	if !hasName{
+	if !hasName {
 		log.Print("No such collection found : " + mongoConfig.Collection)
 		return
 	}
 
 	collection = database.C(mongoConfig.Collection)
-
 
 }

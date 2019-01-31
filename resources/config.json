@@ -3,14 +3,15 @@
   "ConnectionsConfig": {
     "KafkaConsumer": {
       "server_urls": [
-        "localhost:8"
+        "localhost:2181"
       ],
       "connection_pull_size": 12,
       "max_connection_pool_size": 12,
       "min_connection_pool_size": 32,
       "auto_config_pool_size": false,
+      "c_group": "c_group_name",
       "topics": [
-        "model.Event"
+        "models.Event"
       ]
     },
     "Client": {
