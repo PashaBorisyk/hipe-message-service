@@ -28,9 +28,11 @@
       "type": 1
     },
     "Mongo": {
-      "uri": "mongodb+srv://pashaborisyk:Puschinarij1@hipe-mongo-cluster-hsqlk.mongodb.net/test?retryWrites=true",
+      "uri": "mongodb+srv://pashaborisyk:Puschinarij1@hipe-mongo-cluster-hsqlk.mongodb.net/admin?retryWrites=true",
       "database": "database_name",
-      "collection": "collection"
+      "collections": [
+        "collection"
+      ]
     },
     "EventProcessor": {
       "url": "http://localhost:9000/"

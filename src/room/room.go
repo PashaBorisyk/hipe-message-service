@@ -2,6 +2,7 @@ package room
 
 import (
 	"config"
+	"db"
 	"encoding/json"
 	"fmt"
 	"github.com/Shopify/sarama"
@@ -40,6 +41,7 @@ type Room struct {
 	userChannels map[int64]*models.MessageChannel
 	waitGroup    *sync.WaitGroup
 	config       config.GlobalConfig
+	collection   *db.MongoCollection
 }
 
 //func NewRoom(thisAddr, kafkaAddress string, clientBufSize, serverBufSize int, maxClientSize int, waitGroup *sync.WaitGroup) *Room {
@@ -57,7 +59,7 @@ type Room struct {
 //
 //}
 
-func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
+func NewRoomFromConfig(waitGroup *sync.WaitGroup, collectionName string) *Room {
 
 	var globalConfig = config.GetConfig()
 
@@ -71,6 +73,7 @@ func NewRoomFromConfig(waitGroup *sync.WaitGroup) *Room {
 		eventsMaxSize:        globalConfig.ConnectionsConfig.Room.EventsMaxSize,
 		maxClientConnections: globalConfig.ConnectionsConfig.Client.MaxConnectionPoolSize,
 		config:               globalConfig,
+		collection:           db.GetCollection(collectionName),
 	}
 
 }
@@ -100,11 +103,15 @@ func (room *Room) InitKafkaConnection() {
 	zookeeper := room.config.ConnectionsConfig.KafkaServer.ServerUrls
 
 	cg, err := consumergroup.JoinConsumerGroup(cgroup, topics, zookeeper, kafkaConfiguration)
-	defer cg.Close()
+
 	if err != nil {
 		log.Fatal("Error while connecting zookeeper ", err.Error())
 	}
 	room.consume(cg)
+	err = cg.Close()
+	if err != nil {
+		log.Println("Error while closing kafka consumer group : ", err)
+	}
 }
 
 func (room *Room) consume(cg *consumergroup.ConsumerGroup) {

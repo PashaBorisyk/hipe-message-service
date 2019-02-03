@@ -4,9 +4,14 @@ import (
 	"config"
 	"gopkg.in/mgo.v2"
 	"log"
+	"models"
 )
 
-var collection *mgo.Collection
+var database *mgo.Database
+
+type MongoCollection struct {
+	collection *mgo.Collection
+}
 
 func init() {
 
@@ -41,7 +46,7 @@ func init() {
 
 	hasName = false
 
-	database := session.DB(mongoConfig.Database)
+	database = session.DB(mongoConfig.Database)
 
 	collectionsNames, err := database.CollectionNames()
 	if err != nil {
@@ -50,18 +55,61 @@ func init() {
 		return
 	}
 
-	for _, name := range collectionsNames {
-		if name == mongoConfig.Collection {
-			hasName = true
-			break
+	checkCollectionsAvailibility(mongoConfig.Collections, collectionsNames)
+
+}
+
+func GetCollection(name string) *MongoCollection {
+	return &MongoCollection{
+		collection: database.C(name),
+	}
+}
+
+func checkCollectionsAvailibility(configNames, mongoCollections []string) {
+
+	containsCollection := false
+
+	for _, requiredName := range configNames {
+
+		for _, existingName := range mongoCollections {
+			if existingName == requiredName {
+				containsCollection = true
+				break
+			}
+
+			if !containsCollection {
+				log.Println("Warning! DataBase does not contains collection : ", requiredName)
+			}
 		}
+
 	}
 
-	if !hasName {
-		log.Print("No such collection found : " + mongoConfig.Collection)
-		return
-	}
+}
 
-	collection = database.C(mongoConfig.Collection)
+func (mongo *MongoCollection) Insert(docs ...interface{}) error {
+	return mongo.collection.Insert(docs)
+}
 
+func (mongo *MongoCollection) FindId(id interface{}) (result []models.EventMessage, err error) {
+
+	queryResult := mongo.collection.FindId(id)
+	err = queryResult.All(&result)
+
+	return result, err
+}
+
+func (mongo *MongoCollection) Find(query interface{}) (result []models.EventMessage, err error) {
+
+	queryResult := mongo.collection.Find(query)
+	err = queryResult.All(&result)
+
+	return result, err
+}
+
+func (mongo *MongoCollection) RemoveId(id interface{}) error {
+	return mongo.collection.RemoveId(id)
+}
+
+func (mongo *MongoCollection) Remove(selector interface{}) error {
+	return mongo.collection.Remove(selector)
 }

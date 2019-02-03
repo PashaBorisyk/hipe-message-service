@@ -89,9 +89,9 @@ type Topics struct {
 }
 
 type Mongo struct {
-	Uri        string `json:"uri"`
-	Database   string `json:"database"`
-	Collection string `json:"collection"`
+	Uri         string   `json:"uri"`
+	Database    string   `json:"database"`
+	Collections []string `json:"collections"`
 }
 
 func GetConfig() GlobalConfig {
