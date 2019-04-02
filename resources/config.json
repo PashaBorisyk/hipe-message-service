@@ -11,7 +11,16 @@
       "auto_config_pool_size": false,
       "c_group": "c_group_name",
       "topics": [
-        "models.Event"
+        "event-updated",
+        "event-deleted",
+        "event-created",
+        "event-user-removed",
+        "event-user-added",
+
+        "image-added",
+        "image-user-attached",
+
+        "user-relation-created"
       ]
     },
     "Client": {

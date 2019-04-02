@@ -13,7 +13,7 @@ type MongoCollection struct {
 	collection *mgo.Collection
 }
 
-func init() {
+func my() {
 
 	mongoConfig := config.GetConfig().ConnectionsConfig.Mongo
 	session, err := mgo.Dial(mongoConfig.Uri)
@@ -60,9 +60,10 @@ func init() {
 }
 
 func GetCollection(name string) *MongoCollection {
-	return &MongoCollection{
-		collection: database.C(name),
-	}
+	return nil
+	//return &MongoCollection{
+	//	collection: database.C(name),
+	//}
 }
 
 func checkCollectionsAvailibility(configNames, mongoCollections []string) {

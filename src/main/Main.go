@@ -23,7 +23,7 @@ func main() {
 func configureServerConnections(group *sync.WaitGroup) {
 
 	defer group.Done()
-	connectionsRoom := room.NewRoomFromConfig(group)
+	connectionsRoom := room.NewRoomFromConfig(group,"collection-name")
 	group.Add(1)
 	go connectionsRoom.InitKafkaConnection()
 	group.Add(1)
