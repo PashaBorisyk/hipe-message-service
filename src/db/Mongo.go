@@ -4,7 +4,7 @@ import (
 	"config"
 	"gopkg.in/mgo.v2"
 	"log"
-	"models"
+	"persistient"
 )
 
 var database *mgo.Database
@@ -91,7 +91,7 @@ func (mongo *MongoCollection) Insert(docs ...interface{}) error {
 	return mongo.collection.Insert(docs)
 }
 
-func (mongo *MongoCollection) FindId(id interface{}) (result []models.EventMessage, err error) {
+func (mongo *MongoCollection) FindId(id interface{}) (result []persistient.EventMessage, err error) {
 
 	queryResult := mongo.collection.FindId(id)
 	err = queryResult.All(&result)
@@ -99,7 +99,7 @@ func (mongo *MongoCollection) FindId(id interface{}) (result []models.EventMessa
 	return result, err
 }
 
-func (mongo *MongoCollection) Find(query interface{}) (result []models.EventMessage, err error) {
+func (mongo *MongoCollection) Find(query interface{}) (result []persistient.EventMessage, err error) {
 
 	queryResult := mongo.collection.Find(query)
 	err = queryResult.All(&result)

@@ -12,7 +12,7 @@ func main() {
 	log.Print("Starting application...")
 
 	wg.Add(1)
-	go configureServerConnections(&wg)
+	go start(&wg)
 
 	log.Println("Application started")
 	wg.Wait()
@@ -20,7 +20,7 @@ func main() {
 
 }
 
-func configureServerConnections(group *sync.WaitGroup) {
+func start(group *sync.WaitGroup) {
 
 	defer group.Done()
 	connectionsRoom := room.NewRoomFromConfig(group,"collection-name")
@@ -30,3 +30,4 @@ func configureServerConnections(group *sync.WaitGroup) {
 	go connectionsRoom.InitClientConnectionsHandler()
 
 }
+

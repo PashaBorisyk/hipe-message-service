@@ -1,84 +1,31 @@
 package room
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/wvanbergen/kafka/consumergroup"
 	"log"
-	"models"
+	"persistient"
 	"time"
 )
 
-type RecordsHolder struct {
-	EventCreatedRecord     *EventCreatedRecord
-	ImageAddedRecord       *ImageAddedRecord
-	EventUserAddedRecord   *EventUserAddedRecord
-	EventUserRemovedRecord *EventUserRemovedRecord
-	EventUpdatedRecord     *EventUpdatedRecord
+type EventActionRecord struct {
+	EventID int64 `json:"eventId"`
 }
 
-type Record struct{}
-
-type UserRelationCreatedRecord struct {
-	Record
-	UserID       int    `json:"userId"`
-	Username     string `json:"username"`
-	ReceiverUser int    `json:"receiverUser"`
-	RelationType string `json:"relationType"`
-	Time         int64  `json:"time"`
+type UserActionRecord struct {
+	ReceiverUserID int `json:"receiverUserID"`
 }
 
-type EventCreatedRecord struct {
-	Record
-	UserID   int    `json:"userId"`
-	Username string `json:"username"`
-	EventID  int64    `json:"eventId"`
-	UsersID  []int  `json:"usersId"`
-	Time     int64  `json:"time"`
+type EventUserActionRecord struct {
+	EventActionRecord
+	UserActionRecord
 }
 
-type EventUpdatedRecord struct {
-	UserID   int64    `json:"userId"`
-	Username string `json:"username"`
-	EventID  int64    `json:"eventId"`
-	Time     int64  `json:"time"`
-}
-
-type EventDeletedRecord struct {
-	Record
-	UserID   int    `json:"userId"`
-	Username string `json:"username"`
-	EventID  int    `json:"eventId"`
-	Time     int64  `json:"time"`
-}
-
-type ImageAddedRecord struct {
-	Record
-	UserID      int    `json:"userId"`
-	Username    string `json:"username"`
-	ImageID     int    `json:"imageId"`
-	EventID     int64    `json:"eventId"`
-	MarkedUsers []int  `json:"markedUsers"`
-	Time        int64  `json:"time"`
-}
-
-type EventUserAddedRecord struct {
-	Record
-	UserID        int    `json:"userId"`
-	Username      string `json:"username"`
-	EventID       int64    `json:"eventId"`
-	PassiveUserId int    `json:"passiveUserId"`
-	Time          int64  `json:"time"`
-}
-
-type EventUserRemovedRecord struct {
-	Record
-	UserID   int    `json:"userId"`
-	Username string `json:"username"`
-	EventID  int64    `json:"eventId"`
-	By       int    `json:"by"`
-	Time     int64  `json:"time"`
+type MultipleUserEventActionRecord struct {
+	EventActionRecord
+	UsersIDs []int `json:"usersIDs"`
 }
 
 func (room *Room) InitKafkaConnection() {
@@ -94,126 +41,117 @@ func (room *Room) InitKafkaConnection() {
 	topics := room.config.ConnectionsConfig.KafkaServer.Topics
 	zookeeper := room.config.ConnectionsConfig.KafkaServer.ServerUrls
 
-	cg, err := consumergroup.JoinConsumerGroup(cgroup, topics, zookeeper, kafkaConfiguration)
-
-	if err != nil {
-		log.Fatal("Error while connecting zookeeper ", err.Error())
+	err := errors.New("")
+	var cg *consumergroup.ConsumerGroup
+	for err != nil {
+		cg, err = consumergroup.JoinConsumerGroup(cgroup, topics, zookeeper, kafkaConfiguration)
 	}
+	log.Print("Connected to queue successfully")
+
 	room.consumeMessagesFromQueue(cg)
 	err = cg.Close()
 	if err != nil {
-		log.Println("Error while closing kafka consumer group : ", err)
+		log.Println("Error while closing queue consumer group : ", err)
 	}
+
 }
 
 func (room *Room) consumeMessagesFromQueue(cg *consumergroup.ConsumerGroup) {
 
-	log.Println("Starting consumeMessagesFromQueue")
-
+	log.Println("Starting receiving messages from queue")
+	msg := <- cg.Messages()
+	err := cg.CommitUpto(msg)
+	if err != nil {
+		fmt.Println("Error commit zookeeper: ", err.Error())
+	}
 	for {
 		select {
-		case msg := <-cg.Messages():
+		case msg = <-cg.Messages():
 			err := cg.CommitUpto(msg)
 			if err != nil {
 				fmt.Println("Error commit zookeeper: ", err.Error())
-				break
 			}
-
-			switch msg.Topic {
-			case "event-updated":
-				record := unmarshalEventUpdatedRecord(msg.Value)
-				go room.processEventUpdatedRecord(*record)
-			case "event-deleted":
-				record := unmarshalEventDeletedRecord(msg.Value)
-				go room.processEventUpdatedRecord(*record)
-			case "event-created":
-				record := unmarshalEventCreatedRecord(msg.Value)
-				go room.processEventUpdatedRecord(*record)
-			case "event-user-removed":
-				record := new(EventUpdatedRecord)
-				err := json.Unmarshal(msg.Value, record)
-				if err != nil {
-					log.Println("Unable to unmarshall ", string(msg.Value), "to EventUpdatedRecord")
-					log.Println(err)
-				}
-				go room.processEventUpdatedRecord(*record)
-			case "event-user-added":
-				record := new(EventUpdatedRecord)
-				err := json.Unmarshal(msg.Value, record)
-				if err != nil {
-					log.Println("Unable to unmarshall ", string(msg.Value), "to EventUpdatedRecord")
-					log.Println(err)
-				}
-				go room.processEventUpdatedRecord(*record)
-			case "image-added":
-				record := new(EventUpdatedRecord)
-				err := json.Unmarshal(msg.Value, record)
-				if err != nil {
-					log.Println("Unable to unmarshall ", string(msg.Value), "to EventUpdatedRecord")
-					log.Println(err)
-				}
-				go room.processEventUpdatedRecord(*record)
-			case "image-user-attached":
-				record := new(EventUpdatedRecord)
-				err := json.Unmarshal(msg.Value, record)
-				if err != nil {
-					log.Println("Unable to unmarshall ", string(msg.Value), "to EventUpdatedRecord")
-					log.Println(err)
-				}
-				go room.processEventUpdatedRecord(*record)
-			case "user-relation-created":
-				record := new(EventUpdatedRecord)
-				err := json.Unmarshal(msg.Value, record)
-				if err != nil {
-					log.Println("Unable to unmarshall ", string(msg.Value), "to EventUpdatedRecord")
-					log.Println(err)
-				}
-				go room.processEventUpdatedRecord(*record)
-			}
-
+			room.processMessage(msg)
 		}
 	}
 
-	log.Println("Exiting consumeMessagesFromQueue")
 }
 
-func unmarshalEventUpdatedRecord(raw []byte) (record *EventUpdatedRecord) {
-	err := json.Unmarshal(raw, record)
-	if err != nil {
-		log.Println("Unable to unmarshall ", string(raw), "to EventUpdatedRecord")
-		log.Println(err)
+func (room *Room) processMessage(msg *sarama.ConsumerMessage){
+
+	topic := msg.Topic
+	log.Print("New message from : ", topic)
+
+	switch topic {
+	case "event-updated", "event-deleted":
+		record := unmarshalEventActionRecord(msg.Value)
+		if record != nil {
+			go room.processEventActionRecord(*record, string(msg.Value), topic)
+		}
+	case "event-user-removed", "event-user-added":
+		record := unmarshalEventUserActionRecord(msg.Value)
+		if record != nil {
+			go room.processEventUserActionRecord(*record, string(msg.Value), topic)
+		}
+	case "user-relation-created":
+		record := unmarshalUserActionRecord(msg.Value)
+		if record != nil {
+			go room.processUserActionRecord(*record,string(msg.Value),topic)
+		}
+	case "image-added", "image-user-attached":
+		record := unmarshalImageAddedRecord(msg.Value)
+		if record != nil {
+			go room.processMultipleUserEventActionRecord(*record, string(msg.Value), topic)
+		}
+	case "event-created":
+		record := unmarshalEventActionRecord(msg.Value)
+		if record != nil {
+			err := room.newEventCreated(record.EventID)
+			if err != nil{
+				log.Print("Error creating new event room for eventID : ", record.EventID,". Error : ", err)
+			} else {
+				go room.processEventActionRecord(*record, string(msg.Value), topic)
+			}
+		}
 	}
-	return record
 }
-func unmarshalEventDeletedRecord(raw []byte) (record *EventDeletedRecord) {
-	err := json.Unmarshal(raw, record)
-	if err != nil {
-		log.Println("Unable to unmarshall ", string(raw), "to EventUpdatedRecord")
-		log.Println(err)
+
+func (room *Room) processEventActionRecord(record EventActionRecord, payload, topic string) {
+	message := &persistient.EventMessage{
+		EventID: record.EventID,
+		Channel: topic,
+		Body:    payload,
 	}
-	return record
-}
-func unmarshalEventCreatedRecord(raw []byte) (record *EventCreatedRecord) {
-	err := json.Unmarshal(raw, record)
-	if err != nil {
-		log.Println("Unable to unmarshall ", string(raw), "to EventCreatedRecord")
-		log.Println(err)
-	}
-	return record
+	room.sendMessage(message)
 }
 
-func (room *Room) processEventUpdatedRecord(record EventUpdatedRecord,topic string) {
-
-
-
-	message := models.EventMessage{
-		EventID:record.EventID,
-		Time:record.Time,
-		Channel:topic,
+func (room *Room) processUserActionRecord(record UserActionRecord, payload, topic string) {
+	message := &persistient.EventMessage{
+		ReceiverID: record.ReceiverUserID,
+		Body:       payload,
 	}
+	room.sendMessage(message)
+}
 
-	eventRoom := room.eventChannels[record.EventID]
-	for userId,userChannel := range *eventRoom {
-		userChannel
+func (room *Room) processEventUserActionRecord(record EventUserActionRecord, payload, topic string) {
+	message := &persistient.EventMessage{
+		ReceiverID: record.ReceiverUserID,
+		Body:       payload,
+	}
+	room.sendMessage(message)
+}
+
+func (room *Room) processMultipleUserEventActionRecord(record MultipleUserEventActionRecord, payload, topic string) {
+	message := &persistient.EventMessage{
+		Channel: topic,
+		Body:    payload,
+	}
+	for receiverUserID := range record.UsersIDs {
+		message.ReceiverID = receiverUserID
+		room.sendMessageToUser(message)
+	}
+	if record.EventID != 0 {
+		message.EventID = record.EventID
+		room.sendMessageToEventChannel(message)
 	}
 }

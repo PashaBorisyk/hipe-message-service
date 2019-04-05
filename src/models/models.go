@@ -1,17 +1,6 @@
 package models
 
-type MessageChannel chan EventMessage
-type EventMessagesChannel map[int64]*MessageChannel
 
-type EventMessage struct {
-	Time int64 `json:"time"`
-	//Where does the message comes from.
-	// It may be queue name or simply 'message' if is sent from another user
-	Channel string `json:"channel"`
-	EventID int64  `json:"eventId"`
-	UserID  int    `json:"userId"`
-	Body    string `json:"body"`
-}
 
 type Message struct {
 	Id       int64  `json:"id"`
