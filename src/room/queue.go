@@ -71,19 +71,19 @@ func (room *Room) consumeMessagesFromQueue(cg *consumergroup.ConsumerGroup) {
 			if err != nil {
 				fmt.Println("Error commit zookeeper: ", err.Error())
 			}
-			room.processMessage(msg)
+			room.processIncomingRecord(msg)
 		}
 	}
 
 }
 
-func (room *Room) processMessage(msg *sarama.ConsumerMessage){
+func (room *Room) processIncomingRecord(msg *sarama.ConsumerMessage){
 
 	topic := msg.Topic
 	log.Print("New message from : ", topic)
 
 	switch topic {
-	case "event-updated", "event-deleted":
+	case "event-updated", "event-deleted", "event-created":
 		record := unmarshalEventActionRecord(msg.Value)
 		if record != nil {
 			go room.processEventActionRecord(*record, string(msg.Value), topic)
@@ -103,16 +103,6 @@ func (room *Room) processMessage(msg *sarama.ConsumerMessage){
 		if record != nil {
 			go room.processMultipleUserEventActionRecord(*record, string(msg.Value), topic)
 		}
-	case "event-created":
-		record := unmarshalEventActionRecord(msg.Value)
-		if record != nil {
-			err := room.newEventCreated(record.EventID)
-			if err != nil{
-				log.Print("Error creating new event room for eventID : ", record.EventID,". Error : ", err)
-			} else {
-				go room.processEventActionRecord(*record, string(msg.Value), topic)
-			}
-		}
 	}
 }
 
@@ -122,23 +112,27 @@ func (room *Room) processEventActionRecord(record EventActionRecord, payload, to
 		Channel: topic,
 		Body:    payload,
 	}
-	room.sendMessage(message)
+	room.sendMessageToEventChannel(message)
 }
 
 func (room *Room) processUserActionRecord(record UserActionRecord, payload, topic string) {
 	message := &persistient.EventMessage{
 		ReceiverID: record.ReceiverUserID,
 		Body:       payload,
+		Channel:topic,
 	}
-	room.sendMessage(message)
+	room.sendMessageToUser(message)
 }
 
 func (room *Room) processEventUserActionRecord(record EventUserActionRecord, payload, topic string) {
 	message := &persistient.EventMessage{
 		ReceiverID: record.ReceiverUserID,
+		EventID:record.EventID,
 		Body:       payload,
+		Channel:topic,
 	}
-	room.sendMessage(message)
+	room.sendMessageToUser(message)
+	room.sendMessageToEventChannel(message)
 }
 
 func (room *Room) processMultipleUserEventActionRecord(record MultipleUserEventActionRecord, payload, topic string) {

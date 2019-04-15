@@ -62,8 +62,6 @@ func GetEventsIDsMemberID(userID int) (eventIds []int64, err error) {
 
 func GetUserIDsByEventID(eventId int64) (userIds []int, err error) {
 
-	log.Println("Getting users ids for event with id :",eventId)
-
 	if token,err = login(); err != nil {
 		log.Println("Will not perform request without token")
 		return nil, err
@@ -87,7 +85,6 @@ func performGet(url string) (body []byte, status int, err error) {
 		log.Println("Unable to to perform GET request for URL : ", url, " ", err)
 		return nil, 0, err
 	}
-	log.Println("Get request result : ", resp.Status)
 	defer resp.Body.Close()
 
 	status = resp.StatusCode

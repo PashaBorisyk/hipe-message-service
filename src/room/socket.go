@@ -4,12 +4,11 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
-	"persistient"
 	"rest"
 	"strconv"
 )
 
-var upgrader = websocket.Upgrader{
+var upgrade = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
@@ -29,8 +28,8 @@ func (room *Room) InitClientConnectionsHandler() {
 }
 
 func (room *Room) serveClientConnection(w http.ResponseWriter, r *http.Request) {
-	userConnection, err := upgrader.Upgrade(w, r, nil)
-	if err != nil{
+	userConnection, err := upgrade.Upgrade(w, r, nil)
+	if err != nil {
 		log.Print("Error upgrading request : ", err)
 	}
 
@@ -59,54 +58,17 @@ func (room *Room) serveClientConnection(w http.ResponseWriter, r *http.Request) 
 	room.addUserToEventChannels(messageChannel, userID, eventIds...)
 	room.clientCounter++
 
-	ioChannel := make(MessageChannel)
+	//userMessageChannel := make(MessageChannel,10)
 	outputStarted := make(chan bool)
 
 	log.Println("Client connection " + userConnection.RemoteAddr().String() + " successfully instantiated; Users online : " + strconv.Itoa(room.clientCounter))
-	go room.processServerOutput(userConnection, &ioChannel, &outputStarted, userID)
+	go room.startOutgoingClientMessagesRoutine(userConnection, messageChannel, &outputStarted, userID)
 	<-outputStarted
-	room.processServerInput(userConnection, userID)
+	room.startIncomingClientMessagesRoutine(userConnection, userID)
 
 	room.clientCounter--
 	log.Println("Closing client connection " + userConnection.RemoteAddr().String() + " ; Users online : " + strconv.Itoa(room.clientCounter))
 
-}
-
-func (room *Room) processServerOutput(userConnection *websocket.Conn, chanel *MessageChannel, outputStarted *chan bool, userId int) {
-	*outputStarted <- true
-
-	for {
-		message := <-*chanel
-		err := userConnection.WriteJSON(message)
-		if err != nil {
-			log.Println("Error while writing message to client")
-			break
-		}
-
-	}
-
-}
-
-func (room *Room) processServerInput(userConnection *websocket.Conn, userId int) {
-
-	var eventMessage persistient.EventMessage
-
-	for {
-		err := userConnection.ReadJSON(&eventMessage)
-		log.Println("Incoming message")
-		if err != nil {
-			log.Println("Error while reading from buffer")
-			log.Println(err)
-			break
-
-		}
-
-		eventRoom := room.eventChannels[eventMessage.EventID]
-		for _, messageChannel := range *eventRoom {
-			*messageChannel <- eventMessage
-		}
-
-	}
 }
 
 func getUserID(r *http.Request) (int, error) {
