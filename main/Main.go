@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"room"
+	"partyfy-message-service/room"
 	"sync"
 )
 
@@ -23,11 +23,10 @@ func main() {
 func start(group *sync.WaitGroup) {
 
 	defer group.Done()
-	connectionsRoom := room.NewRoomFromConfig(group,"collection-name")
+	connectionsRoom := room.NewRoomFromConfig(group)
 	group.Add(1)
 	go connectionsRoom.InitKafkaConnection()
 	group.Add(1)
 	go connectionsRoom.InitClientConnectionsHandler()
 
 }
-

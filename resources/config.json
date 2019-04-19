@@ -5,10 +5,7 @@
       "server_urls": [
         "localhost:2181"
       ],
-      "connection_pull_size": 12,
       "max_connection_pool_size": 12,
-      "min_connection_pool_size": 32,
-      "auto_config_pool_size": false,
       "c_group": "c_group_name",
       "topics": [
         "event-updated",
@@ -16,32 +13,19 @@
         "event-created",
         "event-user-removed",
         "event-user-added",
-
         "image-added",
         "image-user-attached",
-
         "user-relation-created"
       ]
     },
     "Client": {
-      "connection_pull_size": 12,
-      "max_connection_pool_size": 12,
-      "min_connection_pool_size": 32,
+      "max_connection_pool_size": 1200,
       "max_buff_size": 1024,
-      "auto_config_pool_size": false,
       "listen_port": ":8083"
     },
-    "Room": {
-      "events_max_size": 10,
-      "category": 1,
-      "type": 1
-    },
     "Mongo": {
-      "uri": "mongodb+srv://pashaborisyk:Puschinarij1@hipe-mongo-cluster-hsqlk.mongodb.net/admin?retryWrites=true",
-      "database": "database_name",
-      "collections": [
-        "collection"
-      ]
+      "uri": "mongodb://localhost:27017",
+      "database": "partyfy"
     },
     "EventProcessor": {
       "url": "http://localhost:9000"

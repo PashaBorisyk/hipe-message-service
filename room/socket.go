@@ -4,7 +4,6 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
-	"rest"
 	"strconv"
 )
 
@@ -28,14 +27,17 @@ func (room *Room) InitClientConnectionsHandler() {
 }
 
 func (room *Room) serveClientConnection(w http.ResponseWriter, r *http.Request) {
+
+	room.waitGroup.Add(1)
+	defer room.waitGroup.Done()
+
 	userConnection, err := upgrade.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("Error upgrading request : ", err)
 	}
+	defer userConnection.Close()
 
 	//log.Println("Creating client connection : " + userConnection.RemoteAddr().String())
-	room.waitGroup.Add(1)
-	defer room.waitGroup.Done()
 	//userConnection.MaxPayloadBytes = room.clientBuffSize
 
 	if room.channelsCount >= room.maxClientConnections {
@@ -52,22 +54,18 @@ func (room *Room) serveClientConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	eventIds, err := rest.GetEventsIDsMemberID(userID)
-
 	messageChannel := room.createMessageChannel(userID)
-	room.addUserToEventChannels(messageChannel, userID, eventIds...)
 	room.clientCounter++
 
 	//userMessageChannel := make(MessageChannel,10)
 	outputStarted := make(chan bool)
 
-	log.Println("Client connection " + userConnection.RemoteAddr().String() + " successfully instantiated; Users online : " + strconv.Itoa(room.clientCounter))
+	log.Println("Client connection " + userConnection.RemoteAddr().String() + " successfully instantiated; Users online : " + strconv.Itoa(len(room.userChannels)))
 	go room.startOutgoingClientMessagesRoutine(userConnection, messageChannel, &outputStarted, userID)
 	<-outputStarted
 	room.startIncomingClientMessagesRoutine(userConnection, userID)
 
-	room.clientCounter--
-	log.Println("Closing client connection " + userConnection.RemoteAddr().String() + " ; Users online : " + strconv.Itoa(room.clientCounter))
+	log.Println("Closing client connection " + userConnection.RemoteAddr().String() + " ; Users online : " + strconv.Itoa(len(room.userChannels)))
 
 }
 

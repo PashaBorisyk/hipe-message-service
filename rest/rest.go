@@ -1,11 +1,11 @@
 package rest
 
 import (
-	"config"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"partyfy-message-service/config"
 	"strconv"
 )
 
@@ -26,7 +26,7 @@ func init() {
 func login() (string, error) {
 
 	if token != "" {
-		return token,nil
+		return token, nil
 	}
 
 	log.Println("Trying to login to Main Event Processor")
@@ -34,11 +34,11 @@ func login() (string, error) {
 	url := baseURL + loginPath
 	body, status, err := performGet(url)
 	if status != 200 || err != nil {
-		log.Println("Failed to login with url : ", loginPath, "Will retry to login each request")
+		log.Println("Failed to login with url : ", loginPath, "Will retry to login each request:", err)
 		return "", err
 	}
 
-	log.Println("Login successful. Token is: ", string(body[:10]),"....")
+	log.Println("Login successful. Token is: ", string(body[:10]), "....")
 	return string(body), nil
 }
 
@@ -46,8 +46,8 @@ func GetEventsIDsMemberID(userID int) (eventIds []int64, err error) {
 
 	log.Println("Getting events for user with id : ", userID)
 
-	if token,err = login(); err != nil {
-		log.Println("Will not perform request without token")
+	if token, err = login(); err != nil {
+		log.Println("Will not perform request without token: ",err)
 		return nil, err
 	}
 
@@ -62,8 +62,8 @@ func GetEventsIDsMemberID(userID int) (eventIds []int64, err error) {
 
 func GetUserIDsByEventID(eventId int64) (userIds []int, err error) {
 
-	if token,err = login(); err != nil {
-		log.Println("Will not perform request without token")
+	if token, err = login(); err != nil {
+		log.Println("Will not perform request without token: ",err)
 		return nil, err
 	}
 
@@ -82,7 +82,7 @@ func performGet(url string) (body []byte, status int, err error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Println("Unable to to perform GET request for URL : ", url, " ", err)
+		log.Println("Unable to to perform GET request for URL : ", url, "; ", err)
 		return nil, 0, err
 	}
 	defer resp.Body.Close()

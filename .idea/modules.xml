@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/hipe-message-service.iml" filepath="$PROJECT_DIR$/.idea/hipe-message-service.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/partyfy-message-service.iml" filepath="$PROJECT_DIR$/.idea/partyfy-message-service.iml" />
     </modules>
   </component>
 </project>

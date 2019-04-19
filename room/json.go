@@ -16,7 +16,7 @@ func unmarshalEventActionRecord(raw []byte) (record *EventActionRecord) {
 	return record
 }
 
-func unmarshalEventUserActionRecord(raw []byte) (record *EventUserActionRecord){
+func unmarshalEventUserActionRecord(raw []byte) (record *EventUserActionRecord) {
 	record = new(EventUserActionRecord)
 	err := json.Unmarshal(raw, record)
 	if err != nil {
@@ -27,7 +27,7 @@ func unmarshalEventUserActionRecord(raw []byte) (record *EventUserActionRecord){
 	return record
 }
 
-func unmarshalUserActionRecord(raw []byte) (record *UserActionRecord){
+func unmarshalUserActionRecord(raw []byte) (record *UserActionRecord) {
 	record = new(UserActionRecord)
 	err := json.Unmarshal(raw, record)
 	if err != nil {

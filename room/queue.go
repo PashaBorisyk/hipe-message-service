@@ -6,16 +6,16 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/wvanbergen/kafka/consumergroup"
 	"log"
-	"persistient"
+	"partyfy-message-service/persistient"
 	"time"
 )
 
 type EventActionRecord struct {
-	EventID int64 `json:"eventId"`
+	EventID int64 `json:"eventID"`
 }
 
 type UserActionRecord struct {
-	ReceiverUserID int `json:"receiverUserID"`
+	ReceiverID int `json:"receiverID"`
 }
 
 type EventUserActionRecord struct {
@@ -25,7 +25,7 @@ type EventUserActionRecord struct {
 
 type MultipleUserEventActionRecord struct {
 	EventActionRecord
-	UsersIDs []int `json:"usersIDs"`
+	UsersIDs []int `json:"receiversIDs"`
 }
 
 func (room *Room) InitKafkaConnection() {
@@ -59,7 +59,7 @@ func (room *Room) InitKafkaConnection() {
 func (room *Room) consumeMessagesFromQueue(cg *consumergroup.ConsumerGroup) {
 
 	log.Println("Starting receiving messages from queue")
-	msg := <- cg.Messages()
+	msg := <-cg.Messages()
 	err := cg.CommitUpto(msg)
 	if err != nil {
 		fmt.Println("Error commit zookeeper: ", err.Error())
@@ -77,7 +77,7 @@ func (room *Room) consumeMessagesFromQueue(cg *consumergroup.ConsumerGroup) {
 
 }
 
-func (room *Room) processIncomingRecord(msg *sarama.ConsumerMessage){
+func (room *Room) processIncomingRecord(msg *sarama.ConsumerMessage) {
 
 	topic := msg.Topic
 	log.Print("New message from : ", topic)
@@ -96,7 +96,7 @@ func (room *Room) processIncomingRecord(msg *sarama.ConsumerMessage){
 	case "user-relation-created":
 		record := unmarshalUserActionRecord(msg.Value)
 		if record != nil {
-			go room.processUserActionRecord(*record,string(msg.Value),topic)
+			go room.processUserActionRecord(*record, string(msg.Value), topic)
 		}
 	case "image-added", "image-user-attached":
 		record := unmarshalImageAddedRecord(msg.Value)
@@ -111,25 +111,28 @@ func (room *Room) processEventActionRecord(record EventActionRecord, payload, to
 		EventID: record.EventID,
 		Channel: topic,
 		Body:    payload,
+		IsSent:  false,
 	}
 	room.sendMessageToEventChannel(message)
 }
 
 func (room *Room) processUserActionRecord(record UserActionRecord, payload, topic string) {
 	message := &persistient.EventMessage{
-		ReceiverID: record.ReceiverUserID,
+		ReceiverID: record.ReceiverID,
 		Body:       payload,
-		Channel:topic,
+		Channel:    topic,
+		IsSent:     false,
 	}
 	room.sendMessageToUser(message)
 }
 
 func (room *Room) processEventUserActionRecord(record EventUserActionRecord, payload, topic string) {
 	message := &persistient.EventMessage{
-		ReceiverID: record.ReceiverUserID,
-		EventID:record.EventID,
+		ReceiverID: record.ReceiverID,
+		EventID:    record.EventID,
 		Body:       payload,
-		Channel:topic,
+		Channel:    topic,
+		IsSent:     false,
 	}
 	room.sendMessageToUser(message)
 	room.sendMessageToEventChannel(message)
@@ -139,6 +142,7 @@ func (room *Room) processMultipleUserEventActionRecord(record MultipleUserEventA
 	message := &persistient.EventMessage{
 		Channel: topic,
 		Body:    payload,
+		IsSent:  false,
 	}
 	for receiverUserID := range record.UsersIDs {
 		message.ReceiverID = receiverUserID
