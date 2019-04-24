@@ -1,1 +1,1 @@
-# hipe-message-service
+# Partyfy push-notification and message service
