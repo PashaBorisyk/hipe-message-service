@@ -1,1 +1,1 @@
-# Partyfy push-notification and message service
+# Partyfy push-notifications and message service
